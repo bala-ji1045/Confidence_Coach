@@ -26,7 +26,9 @@ FEEDBACK_TEMPLATES = {
         'start_button': 'Start',
         'stop_button': 'Stop',
         'analyze_button': 'Analyze Speech',
-        'select_language': 'Select Language'
+        'select_language': 'Select Language',
+        'transcript_title': 'Live Transcript:',
+        'report_title': 'Analysis Report:'
     },
     'telugu': {
         'confidence_high': 'అద్భుతమైన ప్రసంగం! చాలా ఆత్మవిశ్వాసంతో ఉంది.',
@@ -46,7 +48,9 @@ FEEDBACK_TEMPLATES = {
         'start_button': 'ప్రారంభించు',
         'stop_button': 'ఆపు',
         'analyze_button': 'విశ్లేషించు',
-        'select_language': 'భాష ఎంచుకోండి'
+        'select_language': 'భాష ఎంచుకోండి',
+        'transcript_title': 'లైవ్ ట్రాన్స్‌క్రిప్ట్:',
+        'report_title': 'విశ్లేషణ నివేదిక:'
     },
     'hindi': {
         'confidence_high': 'बहुत बढ़िया भाषण! बहुत आत्मविश्वास के साथ।',
@@ -66,7 +70,9 @@ FEEDBACK_TEMPLATES = {
         'start_button': 'शुरू करें',
         'stop_button': 'रोकें',
         'analyze_button': 'विश्लेषण करें',
-        'select_language': 'भाषा चुनें'
+        'select_language': 'भाषा चुनें',
+        'transcript_title': 'लाइव प्रतिलिपि:',
+        'report_title': 'विश्लेषण रिपोर्ट:'
     }
 }
 
@@ -172,7 +178,9 @@ def get_ui_text():
         'start_button': templates['start_button'],
         'stop_button': templates['stop_button'],
         'analyze_button': templates['analyze_button'],
-        'select_language': templates['select_language']
+        'select_language': templates['select_language'],
+        'transcript_title': templates['transcript_title'],
+        'report_title': templates['report_title']
     })
 
 @app.route('/analyze', methods=['POST'])
@@ -254,21 +262,9 @@ def analyze():
                         "issues": [k for k, v in local_markers.items() if v > 0]
                     })
         
-        # Determine which language to use for overall templates/recommendations.
-        # If multiple language segments exist, pick the dominant language by total words.
+        # Determine which language to use for templates/recommendations.
+        # Always honor the user's selected language (default_lang).
         templates_lang = default_lang
-        if language_segments:
-            # count words per language to pick dominant
-            lang_word_counts = {}
-            for seg in language_segments:
-                seg_lang = seg['language'].split('-')[0].lower()
-                seg_lang_code = lang_map.get(seg_lang, default_lang)
-                seg_words = len(seg.get('text', '').split())
-                lang_word_counts[seg_lang_code] = lang_word_counts.get(seg_lang_code, 0) + seg_words
-
-            if lang_word_counts:
-                # choose language with most words
-                templates_lang = max(lang_word_counts.items(), key=lambda x: x[1])[0]
 
         # Get templates for response
         templates = FEEDBACK_TEMPLATES.get(templates_lang, FEEDBACK_TEMPLATES[default_lang])

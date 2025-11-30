@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Multi-Language Speech Analyzer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confidence Coach - Multi-Language Speech Analyzer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -11,48 +12,85 @@
 
 <div class="language-selector">
     <label for="language" id="languageLabel">Select Language:</label>
-    <select id="language" onchange="updateRecognitionLanguage()">
+    <select id="language" onchange="onLanguageChange()">
         <option value="en-US">English</option>
-        <option value="te-IN">తెలుగు</option>
-        <option value="hi-IN">हिंदी</option>
+        <option value="te-IN">తెలుగు (Telugu)</option>
+        <option value="hi-IN">हिंदी (Hindi)</option>
     </select>
 </div>
+
 <div class="controls">
-    <button onclick="startListening()" id="startButton">Start</button>
-    <button onclick="stopListening()" id="stopButton">Stop</button>
-    <button onclick="generateReport()" id="analyzeButton">Generate Report</button>
+    <button onclick="startListening()" id="startButton" class="btn-primary">Start</button>
+    <button onclick="stopListening()" id="stopButton" class="btn-secondary" disabled>Stop</button>
+    <button onclick="resetApp()" id="resetButton" class="btn-warning">Reset</button>
+    <button onclick="generateReport()" id="analyzeButton" class="btn-success">Analyze Speech</button>
 </div>
 
-<h3>Live Transcript:</h3>
-<div id="transcript"></div>
+<div class="status" id="status">Ready to start</div>
 
-<h3>Analysis Report:</h3>
-<div id="report"></div>
+<h3 id="transcriptTitle">Live Transcript:</h3>
+<div id="transcript" class="transcript-box"></div>
+
+<h3 id="reportTitle">Analysis Report:</h3>
+<div id="report" class="report-box"></div>
 
 <script>
-    let recognition;
+    let recognition = null;
+    let isListening = false;
     let transcriptText = '';
-    let lastTimestamp = 0;
-    let languageSegments = [];  // Track language changes
+    let languageSegments = [];
 
-    // Update UI text on page load
+    // Initialize app on load
     document.addEventListener('DOMContentLoaded', () => {
-        updateRecognitionLanguage();
+        resetApp();
+        updateUILanguage();
     });
 
-    async function updateRecognitionLanguage() {
-        const wasListening = recognition && recognition.isListening;
-        if (recognition) {
+    // Reset everything to initial state
+    function resetApp() {
+        if (recognition && isListening) {
+            recognition.stop();
+        }
+        
+        recognition = null;
+        isListening = false;
+        transcriptText = '';
+        languageSegments = [];
+        
+        document.getElementById('transcript').innerHTML = '';
+        document.getElementById('report').innerHTML = '';
+        document.getElementById('language').value = 'en-US';
+        document.getElementById('status').textContent = 'Ready to start';
+        document.getElementById('status').className = 'status';
+        
+        document.getElementById('startButton').disabled = false;
+        document.getElementById('stopButton').disabled = true;
+        document.getElementById('analyzeButton').disabled = false;
+        
+        updateUILanguage();
+    }
+
+    // Handle language change
+    function onLanguageChange() {
+        const wasListening = isListening;
+        
+        if (wasListening) {
             stopListening();
         }
+        
+        updateUILanguage();
+        
+        if (wasListening) {
+            setTimeout(() => startListening(), 500);
+        }
+    }
 
-        // Get the selected language code
+    // Update UI text based on language
+    async function updateUILanguage() {
         const langSelect = document.getElementById('language');
         const langCode = langSelect.value.split('-')[0];
-        console.log("Switching to language:", langSelect.value);
         
         try {
-            // Get the UI text for the selected language
             const response = await fetch('/get_ui_text', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -61,25 +99,23 @@
             
             const data = await response.json();
             
-            // Update UI elements with the new language
             document.getElementById('languageLabel').textContent = data.select_language;
             document.getElementById('startButton').textContent = data.start_button;
             document.getElementById('stopButton').textContent = data.stop_button;
             document.getElementById('analyzeButton').textContent = data.analyze_button;
-
-            // Restart listening if it was active
-            if (recognition) {
-                startListening();
-            }
+            document.getElementById('transcriptTitle').textContent = data.transcript_title;
+            document.getElementById('reportTitle').textContent = data.report_title;
         } catch (error) {
             console.error('Error updating language:', error);
         }
     }
 
+    // Start speech recognition
     function startListening() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
         if (!SpeechRecognition) {
-            alert("Speech Recognition not supported in this browser.");
+            alert("Speech Recognition is not supported in this browser. Please use Chrome, Edge, or Safari.");
             return;
         }
 
@@ -87,79 +123,92 @@
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = document.getElementById('language').value;
-        recognition.isListening = true;
-        transcriptText = transcriptText || '';
-        lastTimestamp = Date.now();
-        console.log("Starting recognition in language:", recognition.lang);
 
-        recognition.onstart = () => console.log("Speech recognition started");
+        recognition.onstart = () => {
+            isListening = true;
+            document.getElementById('status').textContent = '🎤 Listening...';
+            document.getElementById('status').className = 'status listening';
+            document.getElementById('startButton').disabled = true;
+            document.getElementById('stopButton').disabled = false;
+            console.log("Recognition started in language:", recognition.lang);
+        };
 
         recognition.onerror = (event) => {
             console.error("Recognition error:", event.error);
-            alert("Speech Recognition Error: " + event.error);
+            document.getElementById('status').textContent = '❌ Error: ' + event.error;
+            document.getElementById('status').className = 'status error';
+            
+            if (event.error !== 'no-speech') {
+                isListening = false;
+                document.getElementById('startButton').disabled = false;
+                document.getElementById('stopButton').disabled = true;
+            }
+        };
+
+        recognition.onend = () => {
+            isListening = false;
+            document.getElementById('status').textContent = '⏹️ Stopped';
+            document.getElementById('status').className = 'status stopped';
+            document.getElementById('startButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+            console.log("Recognition ended");
         };
 
         recognition.onresult = (event) => {
             let interimTranscript = '';
+            
             for (let i = event.resultIndex; i < event.results.length; i++) {
-                let result = event.results[i][0].transcript;
-                const now = Date.now();
-                if ((now - lastTimestamp) / 1000 > 8) {
-                    result = '[pause_2s] ' + result;
-                }
-                lastTimestamp = now;
-
+                const transcript = event.results[i][0].transcript;
+                
                 if (event.results[i].isFinal) {
+                    transcriptText += transcript + ' ';
+                    
                     const currentLang = document.getElementById('language').value;
-                    const segment = {
-                        text: result + ' ',
+                    languageSegments.push({
+                        text: transcript,
                         language: currentLang,
                         timestamp: Date.now()
-                    };
-                    languageSegments.push(segment);
-                    transcriptText += result + ' ';
-                    console.log("Updated transcript:", transcriptText);
-                    console.log("Language segment added:", segment);
+                    });
                 } else {
-                    interimTranscript += result;
+                    interimTranscript += transcript;
                 }
             }
             
-            // Update the display with language indicators
-            const displayText = transcriptText + interimTranscript;
-            const transcriptDiv = document.getElementById('transcript');
-            transcriptDiv.innerHTML = displayText;
-            console.log("Current display text:", displayText);
+            const displayText = transcriptText + '<span class="interim">' + interimTranscript + '</span>';
+            document.getElementById('transcript').innerHTML = displayText || '<em>Start speaking...</em>';
         };
 
-        recognition.start();
-    }
-
-    function stopListening() {
-        if (recognition) {
-            recognition.stop();
-            recognition.isListening = false;
-            console.log("Speech recognition stopped");
+        try {
+            recognition.start();
+        } catch (error) {
+            console.error("Error starting recognition:", error);
+            alert("Failed to start recognition. Please try again.");
         }
     }
 
+    // Stop speech recognition
+    function stopListening() {
+        if (recognition && isListening) {
+            recognition.stop();
+        }
+    }
+
+    // Generate analysis report
     function generateReport() {
-        console.log("Generate report called");
-        // Check if we have any transcript text
         if (!transcriptText || !transcriptText.trim()) {
-            console.log("No transcript text available");
-            alert("Please speak something first.");
+            alert("Please speak something first before analyzing.");
             return;
         }
-        console.log("Sending analysis request with transcript:", transcriptText.trim());
+
+        document.getElementById('status').textContent = '⚙️ Analyzing...';
+        document.getElementById('status').className = 'status analyzing';
+        document.getElementById('analyzeButton').disabled = true;
         
-        // Make sure the request is properly formatted
         const requestData = {
             transcript: transcriptText.trim(),
             language: document.getElementById('language').value.split('-')[0],
             languageSegments: languageSegments
         };
-        console.log("Request data:", requestData);
         
         fetch('/analyze', {
             method: 'POST',
@@ -169,34 +218,37 @@
         .then(res => res.json())
         .then(data => {
             if (data.error) {
-                alert(data.error);
+                alert('Error: ' + data.error);
                 return;
             }
 
             const report = `
                 <div class="report-section">
                     <h4>${data.templates.analysis_summary}</h4>
-                    <div class="info-row">
-                        <div class="confidence-feedback">${data.confidence_feedback}</div>
-                    </div>
+                    <div class="confidence-feedback">${data.confidence_feedback}</div>
                     <div class="confidence-score">
-                        <div class="score-circle" style="--score: ${data.confidence_score}">
-                            <span>${data.confidence_score}%</span>
+                        <div class="score-circle" style="background: conic-gradient(#4CAF50 ${data.confidence_score * 3.6}deg, #e0e0e0 0deg)">
+                            <div class="score-inner">
+                                <span class="score-text">${data.confidence_score}%</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="report-section">
                     <h4>${data.templates.speech_markers}</h4>
-                    <div class="markers">
-                        <div class="marker">
-                            <span>${data.templates.hesitations}: ${data.confidence_markers.hesitations}</span>
+                    <div class="markers-grid">
+                        <div class="marker-item">
+                            <span class="marker-label">${data.templates.hesitations}</span>
+                            <span class="marker-value">${data.confidence_markers.hesitations}</span>
                         </div>
-                        <div class="marker">
-                            <span>${data.templates.repetitions}: ${data.confidence_markers.repetitions}</span>
+                        <div class="marker-item">
+                            <span class="marker-label">${data.templates.repetitions}</span>
+                            <span class="marker-value">${data.confidence_markers.repetitions}</span>
                         </div>
-                        <div class="marker">
-                            <span>${data.templates.filler_count}: ${data.confidence_markers.filler_words}</span>
+                        <div class="marker-item">
+                            <span class="marker-label">${data.templates.filler_count}</span>
+                            <span class="marker-value">${data.confidence_markers.filler_words}</span>
                         </div>
                     </div>
                 </div>
@@ -204,11 +256,11 @@
                 ${data.low_confidence_segments.length > 0 ? `
                     <div class="report-section">
                         <h4>${data.templates.areas_to_improve}</h4>
-                        <div class="segments">
+                        <div class="segments-list">
                             ${data.low_confidence_segments.map(segment => `
-                                <div class="segment">
-                                    <p class="text">"${segment.text}"</p>
-                                    <p class="confidence">${Math.round(segment.confidence * 100)}%</p>
+                                <div class="segment-item">
+                                    <p class="segment-text">"${segment.text}"</p>
+                                    <p class="segment-confidence">Confidence: ${Math.round(segment.confidence * 100)}%</p>
                                 </div>
                             `).join('')}
                         </div>
@@ -218,18 +270,24 @@
                 ${data.recommendations.length > 0 ? `
                     <div class="report-section">
                         <h4>${data.templates.recommendations}</h4>
-                        <ul class="recommendations">
+                        <ul class="recommendations-list">
                             ${data.recommendations.map(rec => `<li>${rec}</li>`).join('')}
                         </ul>
                     </div>
                 ` : ''}
             `;
+            
             document.getElementById('report').innerHTML = report;
+            document.getElementById('status').textContent = '✅ Analysis Complete';
+            document.getElementById('status').className = 'status success';
+            document.getElementById('analyzeButton').disabled = false;
         })
         .catch(err => {
-            console.error("Error fetching report:", err);
-            alert("Failed to analyze. Please check the browser console for details.");
-            console.error("Full error details:", err);
+            console.error("Error:", err);
+            alert("Failed to analyze. Please try again.");
+            document.getElementById('status').textContent = '❌ Analysis Failed';
+            document.getElementById('status').className = 'status error';
+            document.getElementById('analyzeButton').disabled = false;
         });
     }
 </script>
